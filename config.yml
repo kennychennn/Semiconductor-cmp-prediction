@@ -1,0 +1,30 @@
+project:
+  name: cmp-process-performance
+  random_state: 42
+
+paths:
+  raw_data: data/raw
+  train_data: data/raw/training
+  test_data: data/raw/test
+  train_labels: data/raw/labels/CMP-training-removalrate.csv
+  test_labels: data/raw/labels/CMP-test-removalrate.csv
+  interim_data: data/interim
+  processed_data: data/processed
+  figures: reports/figures
+  models: models
+  results: results
+
+data:
+  removal_rate_lower_limit: 10
+  removal_rate_upper_limit: 300
+
+features:
+  rotation_threshold: 0.1
+  high_speed_chambers: [1, 2, 3]
+  low_speed_chambers: [4, 5, 6]
+
+training:
+  outer_splits: 5
+  inner_splits: 3
+  bayes_search_iterations: 50
+  feature_importance_threshold: 0.80

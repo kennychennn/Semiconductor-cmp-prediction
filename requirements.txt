@@ -1,0 +1,10 @@
+numpy>=1.23,<3
+pandas>=1.5,<3
+matplotlib>=3.6,<4
+seaborn>=0.12,<1
+scikit-learn>=1.2,<2
+scikit-optimize>=0.9,<1
+xgboost>=1.7,<4
+jupyter>=1.0,<2
+PyYAML>=6.0,<7
+joblib>=1.2,<2

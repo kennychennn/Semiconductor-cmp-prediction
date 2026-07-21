@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Generated artifacts
+models/*
+!models/.gitkeep
+results/*
+!results/.gitkeep
+reports/figures/eda/
+
+# Raw data is immutable and normally downloaded separately
+data/raw/*
+!data/raw/.gitkeep
