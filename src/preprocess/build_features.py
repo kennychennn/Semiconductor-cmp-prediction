@@ -25,9 +25,14 @@ def extract_physics_features(df: pd.DataFrame) -> pd.DataFrame:
     if missing:
         raise ValueError(f"特徵工程缺少必要欄位: {sorted(missing)}")
 
-    result = df.sort_values(GROUP_KEYS + ["TIMESTAMP"]).copy()
-    result["TIMESTAMP"] = pd.to_numeric(result["TIMESTAMP"], errors="coerce")
-    time_diffs = result.groupby(GROUP_KEYS, sort=False)["TIMESTAMP"].diff().fillna(0).clip(lower=0)
+    result = df.sort_values(["WAFER_ID", "CHAMBER", "STAGE", "TIMESTAMP"]).copy()
+    time_diffs = result["TIMESTAMP"].diff().fillna(0)
+    boundary = (
+        result["WAFER_ID"].ne(result["WAFER_ID"].shift())
+        | result["CHAMBER"].ne(result["CHAMBER"].shift())
+        | result["STAGE"].ne(result["STAGE"].shift())
+    )
+    time_diffs[boundary] = 0
     pressure_active = result.get("PRESSURIZED_CHAMBER_PRESSURE", pd.Series(0, index=result.index)).gt(0)
     head_rotating = result.get("HEAD_ROTATION", pd.Series(0, index=result.index)).gt(0.1)
     wafer_rotating = result.get("WAFER_ROTATION", pd.Series(0, index=result.index)).gt(0.1)
@@ -75,7 +80,7 @@ def _aggregation_rules(df: pd.DataFrame) -> dict[str, list[object]]:
         "HEAD_ROTATION": [nonzero_mean, nonzero_std], "DRESSING_WATER_STATUS": ["mean"],
     }
     for column in ["PRESSURIZED_CHAMBER_PRESSURE", "MAIN_OUTER_AIR_BAG_PRESSURE", "RETAINER_RING_PRESSURE"]:
-        rules[f"polishing_{column}"] = ["mean", "std"]
+        rules[f"polishing_{column}"] = [np.nanmean, np.nanstd]
     return {column: funcs for column, funcs in rules.items() if column in df.columns}
 
 
