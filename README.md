@@ -2,7 +2,7 @@
 
 本專案使用 **PHM Data Challenge 2016** 的化學機械研磨（Chemical Mechanical Planarization, CMP）資料，根據製程時間序列感測訊號，預測晶圓的平均材料去除率 `AVG_REMOVAL_RATE`。分析流程涵蓋資料品質檢查、探索性分析、物理導向特徵工程、分組建模、時間序列交叉驗證、模型比較，以及設備與耗材健康狀態的管理建議。
 
-主要分析內容位於 [`notebooks/MDSHW2_PART2.ipynb`](notebooks/MDSHW2_PART2.ipynb)。
+主要分析內容位於 [`notebooks/CMP.ipynb`](notebooks/CMP.ipynb)。
 
 ![專案分析流程](reports/figures/project_workflow.jpg)
 
@@ -76,7 +76,7 @@ pip install jupyter pandas numpy matplotlib seaborn scikit-learn scikit-optimize
    ```
 
    原始資料已由 `.gitignore` 排除，不會意外推送大型資料或競賽資料至 GitHub；其他使用者需自行取得資料後放入相同目錄。
-2. 開啟 [`notebooks/MDSHW2_PART2.ipynb`](notebooks/MDSHW2_PART2.ipynb)。
+2. 開啟 [`notebooks/CMP.ipynb`](notebooks/CMP.ipynb)。
 3. 由上至下依序執行所有 Cell。Notebook 會自動解析 repository 根目錄，不需修改本機絕對路徑。模型採用多層時間序列交叉驗證與 Bayesian Search，完整訓練可能需要較長時間。
 
 ### 模組化資料流程
@@ -104,10 +104,10 @@ from src.data.make_dataset import load_sensor_data
 from src.preprocess.build_features import build_features
 
 sensor_df = load_sensor_data("path/to/training")
-feature_df, fitted_scalers = build_features(sensor_df, labels)
+feature_df, fitted_scalers = build_features(sensor_df, labels, is_train=True)
 ```
 
-使用測試資料時，應將訓練階段取得的 `fitted_scalers` 傳入 `build_features(..., fit_scalers=False, scalers=fitted_scalers)`，避免資料洩漏。
+使用測試資料時，應將訓練階段取得的 `fitted_scalers` 傳入 `build_features(..., is_train=False, scalers=fitted_scalers)`，避免資料洩漏。
 
 若只需個別執行模型程式，可從專案根目錄執行：
 
@@ -147,7 +147,7 @@ python src/model/neural_network.py
 
 | 檔案 | 說明 |
 |---|---|
-| `notebooks/MDSHW2_PART2.ipynb` | 完整分析、視覺化、建模與結論 |
+| `notebooks/CMP.ipynb` | 完整分析、視覺化、建模與結論 |
 | `src/data/make_dataset.py` | 可重用的資料載入、欄位驗證與摘要模組 |
 | `src/preprocess/clean_data.py` | 標籤去重、異常值清理與冗餘欄位診斷 |
 | `src/preprocess/build_features.py` | 物理特徵萃取、Chamber 聚合與資料集輸出 |
@@ -155,6 +155,31 @@ python src/model/neural_network.py
 | `src/model/` | 決策樹、隨機森林、XGBoost、SVR 與 MLP 模型 |
 | `data/interim/` | 中間特徵資料 |
 | `data/processed/` | 可供模型使用的最終資料集 |
+
+## 未來方向
+
+目前模型已將 `STAGE` 納入特徵，但未來仍可進一步強化製程階段分析。製程階段可依下列方式細分：
+
+- **依既有製程標籤分段**：先將 Stage A 與 Stage B 分開建模，比較各階段的關鍵參數、特徵重要度及預測誤差。
+- **依設備運轉狀態分段**：根據腔體壓力與 Head、Wafer、Stage 的旋轉狀態，將單一階段再分為待機（Idle）、浸潤（Soaking）、研磨（Polishing）及空轉（Spinning）等子階段。
+- **依製程時間分段**：將每次製程依時間比例切分為前段、中段與後段，分別計算壓力、轉速、Slurry Flow 的平均值、變異程度、斜率及穩定時間。
+- **依 Chamber 路徑分段**：比較 Ch1–Ch3 與 Ch4–Ch6，或依晶圓實際經過的 Chamber 順序建立製程路徑群組，分析不同設備路徑造成的差異。
+- **依訊號轉折點自動分段**：利用壓力、轉速或流量的明顯變化點進行 change-point detection，從資料中辨識實際製程狀態切換，而不只依賴預先定義的標籤。
+
+完成分段後，可建立各子階段的持續時間、平均值、標準差、最大值、變化斜率與階段間差值等特徵，並分析前一階段的狀態對後續階段及最終移除率的影響。進一步也可使用跨階段交互特徵或序列模型，找出各階段特有的製程瓶頸，提升模型解釋能力與預測準確度。
+
+### 更進階的技術分段方法
+
+若要減少人工門檻的依賴，可將每個 `WAFER_ID × STAGE × CHAMBER` 視為一條多變量時間序列，使用下列方法辨識製程子階段：
+
+- **多變量變點偵測（Change-point Detection）**：先標準化壓力、轉速與 Slurry Flow，再使用 PELT、Binary Segmentation 或 Window-based 方法，根據均值、變異數或線性趨勢的改變找出階段邊界。PELT 適合離線處理完整製程資料，並可透過 penalty 控制切出的區段數量。
+- **隱馬可夫模型（HMM）**：將 Idle、Soaking、Polishing、Spinning 視為不可直接觀察的隱藏狀態，以壓力、轉速及流量作為觀測值，學習各狀態的分布與轉移機率。這種方法能避免逐時間點分類造成狀態頻繁跳動。
+- **隱半馬可夫模型（HSMM）**：在 HMM 基礎上進一步描述每個狀態的持續時間，較適合具有固定製程順序與合理時間範圍的 CMP 流程，也能排除只維持一、兩個採樣點的非物理狀態。
+- **有限狀態機（Finite-state Machine）**：先以物理規則產生候選狀態，例如壓力大於門檻且 Wafer、Stage 同時旋轉時判定為 Polishing，再加入允許的狀態轉移、最短持續時間與 hysteresis，降低感測器雜訊造成的誤切換。此方法最容易解釋，也適合作為 HMM/HSMM 的初始標籤。
+- **DTW 與序列分群**：利用 Dynamic Time Warping 對齊長度及速度不同的製程曲線，再以階層式分群或 K-medoids 找出常見製程路徑。可先辨識不同 recipe 或設備運行模式，再於每個群組內進行變點分段。
+- **Matrix Profile／Motif Discovery**：搜尋跨晶圓重複出現的訊號片段與異常片段，可用來辨識典型研磨週期、異常短循環或未被既有 `STAGE` 標籤描述的子製程。
+
+建議採用「物理規則狀態機 → 多變量 PELT → HSMM 平滑」的混合流程：先用設備知識建立可解釋的初始狀態，再以變點偵測修正邊界，最後利用狀態轉移與持續時間限制消除不合理的短區段。分段門檻、標準化參數與模型皆應只在訓練資料上估計，再套用至 test／validation，避免資料洩漏。
 
 ## 注意事項
 

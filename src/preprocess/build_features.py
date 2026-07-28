@@ -88,27 +88,24 @@ def _flatten_columns(columns: pd.MultiIndex) -> list[str]:
     flattened = []
     for variable, statistic, chamber in columns:
         statistic_name = statistic if isinstance(statistic, str) else statistic.__name__
-        flattened.append(f"{variable}_{statistic_name}_Ch{chamber}")
+        flattened.append(f"{variable}_{statistic_name}_Ch{int(chamber)}")
     return flattened
 
 
 def build_features(
-    sensor_df: pd.DataFrame,
-    labels: pd.DataFrame | None = None,
-    *,
-    fit_scalers: bool = True,
+    df_raw: pd.DataFrame,
+    label_path: str | Path | pd.DataFrame | None = None,
+    is_train: bool = True,
     scalers: Mapping[str, MinMaxScaler] | None = None,
-    lower_limit: float = 10.0,
-    upper_limit: float = 300.0,
 ) -> tuple[pd.DataFrame, dict[str, MinMaxScaler]]:
-    """建立模型特徵；訓練時回傳 fitted scalers，測試時應重用它們。"""
-    df = sensor_df.drop(columns=COLLINEAR_PRESSURE_COLUMNS, errors="ignore")
+    """使用與 notebook cell 14 相同的介面與運算建立模型特徵。"""
+    df = df_raw.drop(columns=COLLINEAR_PRESSURE_COLUMNS, errors="ignore")
     df = extract_physics_features(df)
-    fitted_scalers = {} if fit_scalers else dict(scalers or {})
+    fitted_scalers = {} if is_train else dict(scalers or {})
     for column in CONSUMABLE_COLUMNS:
         if column not in df:
             continue
-        if fit_scalers:
+        if is_train:
             scaler = MinMaxScaler()
             df[column] = scaler.fit_transform(df[[column]]).ravel()
             fitted_scalers[column] = scaler
@@ -119,6 +116,12 @@ def build_features(
     features = aggregated.unstack("CHAMBER")
     features.columns = _flatten_columns(features.columns)
 
+    if isinstance(label_path, pd.DataFrame):
+        labels = label_path
+    elif label_path is not None and Path(label_path).exists():
+        labels = pd.read_csv(label_path)
+    else:
+        labels = None
     if labels is not None:
         required = {"WAFER_ID", "STAGE", "AVG_REMOVAL_RATE"}
         missing = required.difference(labels.columns)
@@ -129,8 +132,11 @@ def build_features(
 
     start_time = df.groupby(["WAFER_ID", "STAGE"])["TIMESTAMP"].min().rename("START_TIMESTAMP")
     features = features.join(start_time).sort_values("START_TIMESTAMP")
-    if fit_scalers and "AVG_REMOVAL_RATE" in features:
-        features = features[features["AVG_REMOVAL_RATE"].between(lower_limit, upper_limit, inclusive="neither")]
+    if is_train and "AVG_REMOVAL_RATE" in features:
+        features = features[
+            (features["AVG_REMOVAL_RATE"] < 300)
+            & (features["AVG_REMOVAL_RATE"] > 10)
+        ]
     return features.reset_index(), fitted_scalers
 
 
@@ -139,16 +145,31 @@ def main() -> None:
     parser.add_argument("--data-dir", required=True, help="時間序列 CSV 資料夾")
     parser.add_argument("--labels", help="可選的 removal-rate 標籤 CSV")
     parser.add_argument("--output", default="outputs/cmp_features.csv")
+    parser.add_argument("--test-data-dir")
+    parser.add_argument("--test-labels")
+    parser.add_argument("--test-output")
     args = parser.parse_args()
 
     sensor_df = load_sensor_data(args.data_dir)
-    labels = pd.read_csv(args.labels) if args.labels else None
-    features, _ = build_features(sensor_df, labels)
+    features, fitted_scalers = build_features(sensor_df, args.labels, is_train=True)
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     features.to_csv(output, index=False)
     print(f"特徵工程完成，維度: {features.shape}")
     print(f"已輸出: {output}")
+    if args.test_data_dir:
+        test_sensor_df = load_sensor_data(args.test_data_dir)
+        test_features, _ = build_features(
+            test_sensor_df,
+            args.test_labels,
+            is_train=False,
+            scalers=fitted_scalers,
+        )
+        test_output = Path(args.test_output or "outputs/cmp_test_features.csv")
+        test_output.parent.mkdir(parents=True, exist_ok=True)
+        test_features.to_csv(test_output, index=False)
+        print(f"Test set 特徵工程完成，維度: {test_features.shape}")
+        print(f"已輸出: {test_output}")
 
 
 if __name__ == "__main__":

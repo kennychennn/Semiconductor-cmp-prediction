@@ -1,4 +1,4 @@
-"""Shared modeling utilities kept in sync with MDSHW2_PART2.ipynb."""
+"""Shared modeling utilities kept in sync with CMP.ipynb."""
 
 from __future__ import annotations
 
@@ -98,7 +98,7 @@ def train_model(estimator, search_spaces, X_data, y_data, group_name, n_iter=50)
     parameter_name = "params" if "params" in inspect.signature(cross_val_score).parameters else "fit_params"
     score_kwargs[parameter_name] = {"callback": stopper}
     nested_scores = cross_val_score(**score_kwargs)
-    print(f"✅ [{group_name}] 各折 MSE 結果:")
+    print(f"[完成] [{group_name}] 各折 MSE 結果:")
     for i, score in enumerate(nested_scores):
         print(f"   Fold {i + 1}: {-score:.4f}")
     print(f"   平均 MSE: {-np.mean(nested_scores):.4f}(標準差: {np.std(nested_scores):.4f})")
@@ -128,9 +128,9 @@ def evaluate_model(
 ):
     """Reproduce notebook cell 16's grouped validation prediction."""
     if test_df is None or len(test_df) == 0:
-        print(f"\n⚠️ 無測試集，跳過評估 {model_name}")
+        print(f"\n[警告] 無測試集，跳過評估 {model_name}")
         return None
-    print(f"\n🎯 【{model_name} 測試集預測與評估】")
+    print(f"\n【{model_name} 測試集預測與評估】")
     test_df = test_df.set_index("WAFER_ID") if "WAFER_ID" in test_df.columns else test_df.copy()
     y_test = test_df["AVG_REMOVAL_RATE"] if "AVG_REMOVAL_RATE" in test_df.columns else None
     X_test = test_df.drop(columns=["AVG_REMOVAL_RATE", "START_TIMESTAMP"], errors="ignore")
@@ -171,5 +171,5 @@ def evaluate_model(
     return predictions
 
 
-def load_validation(path: str = "data/processed/cmp_final_validation_dataset.csv"):
+def load_validation(path: str = "data/processed/cmp_final_test_dataset.csv"):
     return pd.read_csv(path)

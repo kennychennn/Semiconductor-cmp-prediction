@@ -6,8 +6,10 @@ paths:
   raw_data: data/raw
   train_data: data/raw/training
   test_data: data/raw/test
+  validation_data: data/raw/validation
   train_labels: data/raw/labels/CMP-training-removalrate.csv
   test_labels: data/raw/labels/CMP-test-removalrate.csv
+  validation_labels: data/raw/labels/CMP-validation-removalrate.csv
   interim_data: data/interim
   processed_data: data/processed
   figures: reports/figures
