@@ -16,6 +16,11 @@ from src.data.make_dataset import load_sensor_data
 GROUP_KEYS = ["WAFER_ID", "STAGE", "CHAMBER"]
 CONSUMABLE_COLUMNS = ["USAGE_OF_DRESSER", "USAGE_OF_POLISHING_TABLE", "USAGE_OF_DRESSER_TABLE", "USAGE_OF_MEMBRANE"]
 COLLINEAR_PRESSURE_COLUMNS = ["CENTER_AIR_BAG_PRESSURE", "RIPPLE_AIR_BAG_PRESSURE", "EDGE_AIR_BAG_PRESSURE"]
+ROTATION_TIMING_COLUMNS = [
+    "wafer_start_time", "head_start_time", "stage_start_time",
+    "head_after_wafer_delay", "stage_after_head_delay", "stage_spinup_duration",
+    "head_peak_rotation", "stage_peak_rotation",
+]
 
 
 def extract_physics_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -63,6 +68,66 @@ def nonzero_std(values: pd.Series) -> float:
 def nonzero_median(values: pd.Series) -> float:
     selected = values[values > 0.1]
     return selected.median() if not selected.empty else np.nan
+
+
+def rotation_timing_features(df: pd.DataFrame, threshold: float = 0.1) -> pd.DataFrame:
+    """Extract wafer-stage level rotation startup and spin-up timing features.
+
+    Times are elapsed from the first timestamp of each wafer-stage, so absolute
+    dataset chronology is not accidentally used as a process feature.  A start
+    time is the first observed sample above ``threshold``.  Stage spin-up is the
+    elapsed time from stage activation to the first sample reaching 90% of its
+    observed positive peak; it is NaN when stage rotation is never observed.
+    """
+    required = {"WAFER_ID", "STAGE", "TIMESTAMP"}
+    missing = required.difference(df.columns)
+    if missing:
+        raise ValueError(f"時序特徵缺少必要欄位: {sorted(missing)}")
+    rows = []
+    for (wafer_id, stage), group in df.groupby(["WAFER_ID", "STAGE"], sort=False):
+        group = group.sort_values("TIMESTAMP")
+        timestamps = pd.to_numeric(group["TIMESTAMP"], errors="coerce")
+        t0 = timestamps.min()
+        values = {}
+        starts = {}
+        peaks = {}
+        for column in ["WAFER_ROTATION", "HEAD_ROTATION", "STAGE_ROTATION"]:
+            if column not in group:
+                starts[column] = np.nan
+                peaks[column] = np.nan
+                continue
+            signal = pd.to_numeric(group[column], errors="coerce")
+            active = signal > threshold
+            if not active.any():
+                starts[column] = np.nan
+                peaks[column] = np.nan
+                continue
+            starts[column] = float(timestamps.loc[active].iloc[0] - t0)
+            peaks[column] = float(signal.loc[active].max())
+        stage_spinup = np.nan
+        stage_start = starts.get("STAGE_ROTATION", np.nan)
+        stage_peak = peaks.get("STAGE_ROTATION", np.nan)
+        if pd.notna(stage_start) and pd.notna(stage_peak):
+            signal = pd.to_numeric(group["STAGE_ROTATION"], errors="coerce")
+            reached_peak = signal >= stage_peak * 0.9
+            if reached_peak.any():
+                reached_time = float(timestamps.loc[reached_peak].iloc[0] - t0)
+                stage_spinup = max(0.0, reached_time - stage_start)
+        wafer_start = starts.get("WAFER_ROTATION", np.nan)
+        head_start = starts.get("HEAD_ROTATION", np.nan)
+        rows.append({
+            "WAFER_ID": wafer_id,
+            "STAGE": stage,
+            "wafer_start_time": wafer_start,
+            "head_start_time": head_start,
+            "stage_start_time": stage_start,
+            "head_after_wafer_delay": head_start - wafer_start if pd.notna(head_start) and pd.notna(wafer_start) else np.nan,
+            "stage_after_head_delay": stage_start - head_start if pd.notna(stage_start) and pd.notna(head_start) else np.nan,
+            "stage_spinup_duration": stage_spinup,
+            "head_peak_rotation": peaks.get("HEAD_ROTATION", np.nan),
+            "stage_peak_rotation": stage_peak,
+        })
+    return pd.DataFrame(rows).set_index(["WAFER_ID", "STAGE"])[ROTATION_TIMING_COLUMNS]
 
 
 def _aggregation_rules(df: pd.DataFrame) -> dict[str, list[object]]:
@@ -115,6 +180,8 @@ def build_features(
     aggregated = df.groupby(GROUP_KEYS).agg(_aggregation_rules(df))
     features = aggregated.unstack("CHAMBER")
     features.columns = _flatten_columns(features.columns)
+    timing = rotation_timing_features(df)
+    features = features.join(timing, how="left", validate="one_to_one")
 
     if isinstance(label_path, pd.DataFrame):
         labels = label_path

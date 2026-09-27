@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import inspect
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.model_selection import TimeSeriesSplit, cross_val_score
+from sklearn.model_selection import KFold, TimeSeriesSplit, cross_val_score
 from skopt import BayesSearchCV
 from skopt.callbacks import DeltaYStopper
 
@@ -70,22 +69,43 @@ def prepare_data(data_file: str = "data/processed/cmp_final_dataset.csv") -> Pre
     )
 
 
-def train_model(estimator, search_spaces, X_data, y_data, group_name, n_iter=50):
-    """Reproduce the notebook's nested time-series Bayesian search."""
-    print(f"\n正在為 {group_name} 執行巢狀時間序列交叉驗證...")
-    fold_size = len(X_data) // 6
-    outer_cv = TimeSeriesSplit(n_splits=5, max_train_size=fold_size * 2)
+def train_model(
+    estimator,
+    search_spaces,
+    X_data,
+    y_data,
+    group_name,
+    n_iter=50,
+    cv_strategy="competition",
+):
+    """Run nested Bayesian CV with a competition-aligned default.
+
+    ``competition`` uses shuffled K-fold splits because the official test set
+    spans the same timestamp range as training. ``time`` remains available as
+    an expanding-window diagnostic for temporal drift.
+    """
+    if cv_strategy == "competition":
+        outer_cv = KFold(n_splits=5, shuffle=True, random_state=42)
+        inner_cv = KFold(n_splits=3, shuffle=True, random_state=43)
+        cv_description = "nested shuffled K-fold"
+    elif cv_strategy == "time":
+        outer_cv = TimeSeriesSplit(n_splits=5)
+        inner_cv = TimeSeriesSplit(n_splits=3)
+        cv_description = "nested expanding time-series"
+    else:
+        raise ValueError("cv_strategy 必須是 'competition' 或 'time'")
+
+    print(f"\n正在為 {group_name} 執行{cv_description}...")
     search = BayesSearchCV(
         estimator=estimator,
         search_spaces=search_spaces,
         n_iter=n_iter,
-        cv=TimeSeriesSplit(n_splits=3),
+        cv=inner_cv,
         scoring="neg_mean_squared_error",
         n_jobs=1,
         verbose=0,
         random_state=42,
     )
-    stopper = DeltaYStopper(delta=0.01, n_best=15)
     score_kwargs = {
         "estimator": search,
         "X": X_data,
@@ -94,15 +114,14 @@ def train_model(estimator, search_spaces, X_data, y_data, group_name, n_iter=50)
         "scoring": "neg_mean_squared_error",
         "n_jobs": 1,
     }
-    # sklearn renamed fit_params to params in 1.4; both carry the same callback.
-    parameter_name = "params" if "params" in inspect.signature(cross_val_score).parameters else "fit_params"
-    score_kwargs[parameter_name] = {"callback": stopper}
     nested_scores = cross_val_score(**score_kwargs)
     print(f"[完成] [{group_name}] 各折 MSE 結果:")
     for i, score in enumerate(nested_scores):
         print(f"   Fold {i + 1}: {-score:.4f}")
     print(f"   平均 MSE: {-np.mean(nested_scores):.4f}(標準差: {np.std(nested_scores):.4f})")
-    search.fit(X_data, y_data, callback=stopper)
+    # Use a fresh callback for the final full-data search. Sharing callback
+    # state across outer folds can make fold scores depend on fold order.
+    search.fit(X_data, y_data, callback=DeltaYStopper(delta=0.01, n_best=15))
     print(f"   最佳參數: {search.best_params_}")
     return search.best_estimator_
 

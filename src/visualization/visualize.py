@@ -61,11 +61,17 @@ def plot_feature_groups(sensor_df: pd.DataFrame, output_dir: str | Path, show: b
 
 
 def feature_target_correlations(sensor_df: pd.DataFrame, labels: pd.DataFrame) -> pd.Series:
-    """以晶圓平均值計算數值特徵和 AVG_REMOVAL_RATE 的 Pearson 相關係數。"""
-    wafer_features = sensor_df.groupby("WAFER_ID").mean(numeric_only=True)
-    wafer_target = labels.groupby("WAFER_ID")["AVG_REMOVAL_RATE"].mean()
-    joined = wafer_features.join(wafer_target, how="inner")
-    return joined.corr(numeric_only=True)["AVG_REMOVAL_RATE"].drop("AVG_REMOVAL_RATE").sort_values()
+    """以 wafer-stage 平均值與同階段標籤計算 Pearson 相關係數。"""
+    keys = ["WAFER_ID", "STAGE"]
+    wafer_features = sensor_df.groupby(keys).mean(numeric_only=True)
+    wafer_target = labels.set_index(keys, verify_integrity=True)["AVG_REMOVAL_RATE"]
+    joined = wafer_features.join(wafer_target, how="inner", validate="one_to_one")
+    if joined.empty:
+        raise ValueError("感測資料與標籤沒有可配對的 wafer-stage")
+    # These columns are categorical identifiers/codes, not continuous process measurements.
+    non_process_columns = ["CHAMBER", "MACHINE_DATA", "MACHINE_ID"]
+    correlation_input = joined.drop(columns=non_process_columns, errors="ignore")
+    return correlation_input.corr(numeric_only=True)["AVG_REMOVAL_RATE"].drop("AVG_REMOVAL_RATE").sort_values()
 
 
 def plot_correlation_matrix(df: pd.DataFrame, columns: list[str], title: str, output: Path) -> None:
@@ -96,7 +102,7 @@ def run_eda(sensor_df: pd.DataFrame, labels: pd.DataFrame, output_dir: str | Pat
     fig, ax = plt.subplots(figsize=(10, 8))
     colors = ["indianred" if value < 0 else "steelblue" for value in correlations]
     correlations.plot.barh(color=colors, width=0.8, ax=ax)
-    ax.set(title="Feature Correlation with AVG_REMOVAL_RATE", xlabel="Pearson Correlation", ylabel="Features")
+    ax.set(title="Feature Correlation with AVG_REMOVAL_RATE (Wafer-Stage Mean)", xlabel="Pearson Correlation", ylabel="Features")
     ax.grid(axis="x", linestyle="--", alpha=0.6)
     fig.tight_layout()
     fig.savefig(output_dir / "feature_target_correlations.png", dpi=150, bbox_inches="tight")
