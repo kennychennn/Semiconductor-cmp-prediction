@@ -24,7 +24,7 @@ def clean_labels(
 
 
 def diagnose_redundant_columns(sensor_df: pd.DataFrame) -> dict[str, object]:
-    """檢查 MACHINE_ID 變異及 MACHINE_DATA/CHAMBER 一對一關係。"""
+    """檢查識別欄位映射及耗材欄位共線性。"""
     machine_id_unique = sensor_df["MACHINE_ID"].nunique(dropna=False) if "MACHINE_ID" in sensor_df else None
     if {"MACHINE_DATA", "CHAMBER"}.issubset(sensor_df.columns):
         cross_tab = pd.crosstab(sensor_df["MACHINE_DATA"], sensor_df["CHAMBER"])
@@ -33,10 +33,18 @@ def diagnose_redundant_columns(sensor_df: pd.DataFrame) -> dict[str, object]:
     else:
         cross_tab = pd.DataFrame()
         is_one_to_one = None
+    usage_correlation = None
+    usage_is_collinear = None
+    usage_columns = ["USAGE_OF_BACKING_FILM", "USAGE_OF_PRESSURIZED_SHEET"]
+    if set(usage_columns).issubset(sensor_df.columns):
+        usage_correlation = float(sensor_df[usage_columns].corr().iloc[0, 1])
+        usage_is_collinear = bool(abs(usage_correlation) >= 0.999999)
     return {
         "machine_id_unique": machine_id_unique,
         "machine_data_chamber_crosstab": cross_tab,
         "machine_data_chamber_one_to_one": is_one_to_one,
+        "usage_correlation": usage_correlation,
+        "usage_is_collinear": usage_is_collinear,
     }
 
 
@@ -81,6 +89,8 @@ def main() -> None:
     print(f"清理後標籤: {len(cleaned)} 筆；排除 {deduplicated_count - len(cleaned)} 筆異常值")
     print(f"MACHINE_ID 類別數: {diagnostics['machine_id_unique']}")
     print(f"MACHINE_DATA 與 CHAMBER 是否一對一: {diagnostics['machine_data_chamber_one_to_one']}")
+    print(f"BACKING_FILM / PRESSURIZED_SHEET 相關係數: {diagnostics['usage_correlation']}")
+    print(f"BACKING_FILM / PRESSURIZED_SHEET 是否共線: {diagnostics['usage_is_collinear']}")
     print(f"已輸出: {output}")
 
 

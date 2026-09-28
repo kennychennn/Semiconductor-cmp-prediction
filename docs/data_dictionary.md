@@ -101,9 +101,9 @@ current aggregation rules:
 | Raw column | Current treatment | Reason |
 |---|---|---|
 | `MACHINE_ID` | Not aggregated | Machine identifier is not used as a process statistic |
-| `MACHINE_DATA` | Not aggregated | Wafer-ring location identifier is not used as a process statistic |
-| `USAGE_OF_BACKING_FILM` | Not aggregated; also excluded by model preparation | Not part of the current selected consumable feature set |
-| `USAGE_OF_PRESSURIZED_SHEET` | Not aggregated | Not part of the current selected consumable feature set |
+| `MACHINE_DATA` | Not aggregated | Exactly one-to-one with `CHAMBER`, so retaining both would duplicate the same information; `CHAMBER` is retained as the process-path variable |
+| `USAGE_OF_BACKING_FILM` | Not aggregated; also excluded by model preparation | Collinear with `USAGE_OF_PRESSURIZED_SHEET`; one of the redundant usage variables is omitted |
+| `USAGE_OF_PRESSURIZED_SHEET` | Not aggregated | Collinear with `USAGE_OF_BACKING_FILM`; the current feature set keeps neither redundant usage signal |
 | `CENTER_AIR_BAG_PRESSURE` | Dropped before aggregation | Listed in the project’s collinearity exclusion set |
 | `RIPPLE_AIR_BAG_PRESSURE` | Dropped before aggregation | Listed in the project’s collinearity exclusion set |
 | `EDGE_AIR_BAG_PRESSURE` | Dropped before aggregation | Listed in the project’s collinearity exclusion set |

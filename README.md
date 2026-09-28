@@ -19,7 +19,7 @@
 2. **資料清理**：
    - 以 `WAFER_ID` 與 `STAGE` 去除重複標籤。
    - 排除 `AVG_REMOVAL_RATE <= 10` 或 `>= 300` 的極端量測值。
-   - 移除無變異或完全共線欄位，例如 `MACHINE_ID` 與 `MACHINE_DATA`。
+   - 移除冗餘欄位：`MACHINE_DATA` 與 `CHAMBER` 完全一對一共線；`USAGE_OF_BACKING_FILM` 與 `USAGE_OF_PRESSURIZED_SHEET` 也高度共線，因此避免重複保留。
    - 依機台路徑造成的缺失特徵以 0 填補。
 3. **探索性分析**：檢查壓力、流量、耗材與轉速變數的時間趨勢、共線性，以及各特徵和目標值的相關性。
 4. **特徵工程**：

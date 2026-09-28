@@ -15,6 +15,10 @@ from src.data.make_dataset import load_sensor_data
 
 GROUP_KEYS = ["WAFER_ID", "STAGE", "CHAMBER"]
 CONSUMABLE_COLUMNS = ["USAGE_OF_DRESSER", "USAGE_OF_POLISHING_TABLE", "USAGE_OF_DRESSER_TABLE", "USAGE_OF_MEMBRANE"]
+# These two usage counters carry the same linear information, so neither is
+# emitted as a model feature. Keeping the decision here makes the feature
+# schema explicit rather than relying only on the aggregation rule list.
+COLLINEAR_USAGE_COLUMNS = ["USAGE_OF_BACKING_FILM", "USAGE_OF_PRESSURIZED_SHEET"]
 COLLINEAR_PRESSURE_COLUMNS = ["CENTER_AIR_BAG_PRESSURE", "RIPPLE_AIR_BAG_PRESSURE", "EDGE_AIR_BAG_PRESSURE"]
 ROTATION_TIMING_COLUMNS = [
     "wafer_start_time", "head_start_time", "stage_start_time",
@@ -167,7 +171,10 @@ def build_features(
     disabled by default. No process-state duration columns are created; the
     baseline uses only the single ``pressure_duration`` proxy.
     """
-    df = df_raw.drop(columns=COLLINEAR_PRESSURE_COLUMNS, errors="ignore")
+    df = df_raw.drop(
+        columns=COLLINEAR_USAGE_COLUMNS + COLLINEAR_PRESSURE_COLUMNS,
+        errors="ignore",
+    )
     df = extract_physics_features(df)
     fitted_scalers = {} if is_train else dict(scalers or {})
     for column in CONSUMABLE_COLUMNS:
