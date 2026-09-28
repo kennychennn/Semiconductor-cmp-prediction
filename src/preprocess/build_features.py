@@ -24,7 +24,7 @@ ROTATION_TIMING_COLUMNS = [
 
 
 def extract_physics_features(df: pd.DataFrame) -> pd.DataFrame:
-    """從壓力、旋轉及時間差推導各製程狀態的持續時間。"""
+    """從壓力訊號與時間差推導壓力作用時間及研磨壓力統計。"""
     required = set(GROUP_KEYS + ["TIMESTAMP"])
     missing = required.difference(df.columns)
     if missing:
@@ -43,13 +43,11 @@ def extract_physics_features(df: pd.DataFrame) -> pd.DataFrame:
     wafer_rotating = result.get("WAFER_ROTATION", pd.Series(0, index=result.index)).gt(0.1)
     stage_rotating = result.get("STAGE_ROTATION", pd.Series(0, index=result.index)).gt(0.1)
     polishing_rotation = wafer_rotating & stage_rotating
-    any_rotation = head_rotating | wafer_rotating | stage_rotating
     polishing = pressure_active & polishing_rotation
 
-    result["polishing_duration"] = time_diffs.where(polishing, 0)
-    result["soaking_duration"] = time_diffs.where(pressure_active & ~polishing_rotation, 0)
-    result["idle_duration"] = time_diffs.where(~pressure_active & ~any_rotation, 0)
-    result["spinning_duration"] = time_diffs.where(~pressure_active & any_rotation, 0)
+    # 只保留壓力開啟的累積時間；它是有效研磨時間的代理變數，
+    # 並不宣稱所有壓力開啟時間都產生相同的材料去除量。
+    result["pressure_duration"] = time_diffs.where(pressure_active, 0)
     for column in [c for c in result if "PRESSURE" in c and not c.startswith("polishing_")]:
         result[f"polishing_{column}"] = result[column].where(polishing, np.nan)
     return result
@@ -134,8 +132,7 @@ def _aggregation_rules(df: pd.DataFrame) -> dict[str, list[object]]:
     rules: dict[str, list[object]] = {
         "USAGE_OF_DRESSER": ["max"], "USAGE_OF_POLISHING_TABLE": ["max"],
         "USAGE_OF_DRESSER_TABLE": ["max"], "USAGE_OF_MEMBRANE": ["max"],
-        "polishing_duration": ["sum"], "soaking_duration": ["sum"],
-        "idle_duration": ["sum"], "spinning_duration": ["sum"],
+        "pressure_duration": ["sum"],
         "PRESSURIZED_CHAMBER_PRESSURE": [nonzero_mean, nonzero_std],
         "MAIN_OUTER_AIR_BAG_PRESSURE": [nonzero_mean, nonzero_std],
         "RETAINER_RING_PRESSURE": [nonzero_mean, nonzero_std],
@@ -162,8 +159,14 @@ def build_features(
     label_path: str | Path | pd.DataFrame | None = None,
     is_train: bool = True,
     scalers: Mapping[str, MinMaxScaler] | None = None,
+    include_timing_features: bool = False,
 ) -> tuple[pd.DataFrame, dict[str, MinMaxScaler]]:
-    """使用與 notebook cell 14 相同的介面與運算建立模型特徵。"""
+    """使用與 notebook cell 14 相同的介面與運算建立模型特徵。
+
+    Rotation timing features are retained as an optional experiment and are
+    disabled by default. No process-state duration columns are created; the
+    baseline uses only the single ``pressure_duration`` proxy.
+    """
     df = df_raw.drop(columns=COLLINEAR_PRESSURE_COLUMNS, errors="ignore")
     df = extract_physics_features(df)
     fitted_scalers = {} if is_train else dict(scalers or {})
@@ -180,8 +183,9 @@ def build_features(
     aggregated = df.groupby(GROUP_KEYS).agg(_aggregation_rules(df))
     features = aggregated.unstack("CHAMBER")
     features.columns = _flatten_columns(features.columns)
-    timing = rotation_timing_features(df)
-    features = features.join(timing, how="left", validate="one_to_one")
+    if include_timing_features:
+        timing = rotation_timing_features(df)
+        features = features.join(timing, how="left", validate="one_to_one")
 
     if isinstance(label_path, pd.DataFrame):
         labels = label_path

@@ -20,7 +20,14 @@ SEARCH_SPACE = {
 
 
 def estimator():
-    return XGBRegressor(random_state=42, objective="reg:squarederror")
+    # BayesSearchCV 本身以單一工作執行；這裡也明確限制 XGBoost 的
+    # OpenMP 執行緒，避免 ``n_jobs=None`` 在 macOS 上佔滿所有核心。
+    return XGBRegressor(
+        random_state=42,
+        objective="reg:squarederror",
+        n_jobs=1,
+        tree_method="hist",
+    )
 
 
 def refine_model(base_model, X_df, y, group_name, cumulative_threshold=0.80):

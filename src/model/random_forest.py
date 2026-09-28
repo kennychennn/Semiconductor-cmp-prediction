@@ -13,7 +13,7 @@ def main():
         "max_depth": Integer(5, 50),
         "min_samples_leaf": Integer(1, 15),
     }
-    estimator = RandomForestRegressor(random_state=42, n_jobs=-1)
+    estimator = RandomForestRegressor(random_state=42, n_jobs=1)
     high = train_model(estimator, search_space, data.X_high_filled, data.y_high, "RF_High_Group")
     low = train_model(estimator, search_space, data.X_low_filled, data.y_low, "RF_Low_Group")
     show_importance(high, data.X_high.columns, "RF High Group")
