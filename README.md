@@ -38,11 +38,11 @@ Notebook 中記錄的 Validation MSE 如下（數值越低越好）：
 
 | 模型 | Validation MSE |
 |---|---:|
-| Optimized XGBoost（特徵篩選後） | **9.19** |
-| Random Forest（分組） | 10.15 |
-| Decision Tree（分組） | 16.12 |
-| SVR（分組） | 19.55 |
-| Neural Network（不分組） | 24.40 |
+| Optimized XGBoost（特徵篩選後） | **8.80** |
+| Random Forest（分組） | 10.27 |
+| Decision Tree（分組） | 15.78 |
+| SVR（分組） | 19.65 |
+| Neural Network（不分組） | 27.72 |
 
 XGBoost 在本次實驗中的驗證誤差最低。分組後的神經網路因各組訓練樣本較少而表現不佳；改用完整資料訓練後有所改善，但仍未超越樹模型。
 
