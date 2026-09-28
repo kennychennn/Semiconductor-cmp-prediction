@@ -15,9 +15,9 @@ from src.data.make_dataset import load_sensor_data
 
 GROUP_KEYS = ["WAFER_ID", "STAGE", "CHAMBER"]
 CONSUMABLE_COLUMNS = ["USAGE_OF_DRESSER", "USAGE_OF_POLISHING_TABLE", "USAGE_OF_DRESSER_TABLE", "USAGE_OF_MEMBRANE"]
-# These two usage counters carry the same linear information, so neither is
-# emitted as a model feature. Keeping the decision here makes the feature
-# schema explicit rather than relying only on the aggregation rule list.
+# Backing-film usage, membrane usage, and pressurized-sheet usage are mutually
+# collinear. Membrane usage is retained as the representative signal; the
+# other two are excluded before aggregation.
 COLLINEAR_USAGE_COLUMNS = ["USAGE_OF_BACKING_FILM", "USAGE_OF_PRESSURIZED_SHEET"]
 COLLINEAR_PRESSURE_COLUMNS = ["CENTER_AIR_BAG_PRESSURE", "RIPPLE_AIR_BAG_PRESSURE", "EDGE_AIR_BAG_PRESSURE"]
 ROTATION_TIMING_COLUMNS = [

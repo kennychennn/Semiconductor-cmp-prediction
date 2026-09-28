@@ -98,12 +98,17 @@ single duration proxy used by the model.
 These raw columns remain part of the source schema but are not emitted by the
 current aggregation rules:
 
+The three usage counters `USAGE_OF_BACKING_FILM`, `USAGE_OF_MEMBRANE`, and
+`USAGE_OF_PRESSURIZED_SHEET` are mutually collinear. The current feature set
+keeps `USAGE_OF_MEMBRANE` as the representative usage signal and excludes the
+other two.
+
 | Raw column | Current treatment | Reason |
 |---|---|---|
 | `MACHINE_ID` | Not aggregated | Machine identifier is not used as a process statistic |
 | `MACHINE_DATA` | Not aggregated | Exactly one-to-one with `CHAMBER`, so retaining both would duplicate the same information; `CHAMBER` is retained as the process-path variable |
-| `USAGE_OF_BACKING_FILM` | Not aggregated; also excluded by model preparation | Collinear with `USAGE_OF_PRESSURIZED_SHEET`; one of the redundant usage variables is omitted |
-| `USAGE_OF_PRESSURIZED_SHEET` | Not aggregated | Collinear with `USAGE_OF_BACKING_FILM`; the current feature set keeps neither redundant usage signal |
+| `USAGE_OF_BACKING_FILM` | Not aggregated; also excluded by model preparation | Collinear with `USAGE_OF_MEMBRANE` and `USAGE_OF_PRESSURIZED_SHEET`; excluded while `USAGE_OF_MEMBRANE` is retained |
+| `USAGE_OF_PRESSURIZED_SHEET` | Not aggregated | Collinear with `USAGE_OF_BACKING_FILM` and `USAGE_OF_MEMBRANE`; excluded while `USAGE_OF_MEMBRANE` is retained |
 | `CENTER_AIR_BAG_PRESSURE` | Dropped before aggregation | Listed in the project’s collinearity exclusion set |
 | `RIPPLE_AIR_BAG_PRESSURE` | Dropped before aggregation | Listed in the project’s collinearity exclusion set |
 | `EDGE_AIR_BAG_PRESSURE` | Dropped before aggregation | Listed in the project’s collinearity exclusion set |

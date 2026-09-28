@@ -33,17 +33,26 @@ def diagnose_redundant_columns(sensor_df: pd.DataFrame) -> dict[str, object]:
     else:
         cross_tab = pd.DataFrame()
         is_one_to_one = None
-    usage_correlation = None
+    usage_correlations = None
     usage_is_collinear = None
-    usage_columns = ["USAGE_OF_BACKING_FILM", "USAGE_OF_PRESSURIZED_SHEET"]
+    usage_columns = [
+        "USAGE_OF_BACKING_FILM",
+        "USAGE_OF_MEMBRANE",
+        "USAGE_OF_PRESSURIZED_SHEET",
+    ]
     if set(usage_columns).issubset(sensor_df.columns):
-        usage_correlation = float(sensor_df[usage_columns].corr().iloc[0, 1])
-        usage_is_collinear = bool(abs(usage_correlation) >= 0.999999)
+        correlation = sensor_df[usage_columns].corr()
+        usage_correlations = {
+            f"{left} vs {right}": float(correlation.loc[left, right])
+            for index, left in enumerate(usage_columns)
+            for right in usage_columns[index + 1:]
+        }
+        usage_is_collinear = all(abs(value) >= 0.999999 for value in usage_correlations.values())
     return {
         "machine_id_unique": machine_id_unique,
         "machine_data_chamber_crosstab": cross_tab,
         "machine_data_chamber_one_to_one": is_one_to_one,
-        "usage_correlation": usage_correlation,
+        "usage_correlations": usage_correlations,
         "usage_is_collinear": usage_is_collinear,
     }
 
@@ -89,8 +98,8 @@ def main() -> None:
     print(f"清理後標籤: {len(cleaned)} 筆；排除 {deduplicated_count - len(cleaned)} 筆異常值")
     print(f"MACHINE_ID 類別數: {diagnostics['machine_id_unique']}")
     print(f"MACHINE_DATA 與 CHAMBER 是否一對一: {diagnostics['machine_data_chamber_one_to_one']}")
-    print(f"BACKING_FILM / PRESSURIZED_SHEET 相關係數: {diagnostics['usage_correlation']}")
-    print(f"BACKING_FILM / PRESSURIZED_SHEET 是否共線: {diagnostics['usage_is_collinear']}")
+    print(f"三個耗材欄位相關係數: {diagnostics['usage_correlations']}")
+    print(f"BACKING_FILM / MEMBRANE / PRESSURIZED_SHEET 是否共線: {diagnostics['usage_is_collinear']}")
     print(f"已輸出: {output}")
 
 
