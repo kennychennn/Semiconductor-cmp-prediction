@@ -23,13 +23,13 @@
    - 依機台路徑造成的缺失特徵以 0 填補。
 3. **探索性分析**：檢查壓力、流量、耗材與轉速變數的時間趨勢、共線性，以及各特徵和目標值的相關性。
 4. **特徵工程**：
-   - 根據壓力與旋轉狀態計算研磨、浸泡、閒置及空轉時間。
+   - 根據 MRR ≈ 研磨厚度／總壓力作用時間，從相鄰時間差中擷取 `PRESSURIZED_CHAMBER_PRESSURE > 0` 的作用時間，形成 `pressure_duration`，再依 `WAFER_ID × STAGE × CHAMBER` 聚合。
    - 對耗材使用量進行 Min-Max 縮放並取最大值。
    - 萃取壓力與轉速的非零平均數／中位數及標準差。
    - 加總各條研磨液管線流量。
    - 計算注水狀態的平均比例。
    - 依 Chamber 聚合特徵，以保留製程參數與機台的交互作用。
-5. **模型訓練**：依 Chamber 將資料劃分為高速與低速組，透過 Bayesian Search 與 Nested Time-Series Cross-Validation 搜尋超參數。
+5. **模型訓練**：依 Chamber 將資料劃分為高速與低速組，透過 Bayesian Search 與 Nested Shuffled K-fold 搜尋超參數，並以 TimeSeriesCV 作為時間漂移診斷。
 6. **模型解釋與決策建議**：使用樹模型特徵重要度進行解釋，並以累積重要度 80% 篩選 XGBoost 關鍵特徵重新訓練。
 
 ## 模型結果
@@ -77,7 +77,7 @@ pip install jupyter pandas numpy matplotlib seaborn scikit-learn scikit-optimize
 
    原始資料已由 `.gitignore` 排除，不會意外推送大型資料或競賽資料至 GitHub；其他使用者需自行取得資料後放入相同目錄。
 2. 開啟 [`notebooks/CMP.ipynb`](notebooks/CMP.ipynb)。
-3. 由上至下依序執行所有 Cell。Notebook 會自動解析 repository 根目錄，不需修改本機絕對路徑。模型採用多層時間序列交叉驗證與 Bayesian Search，完整訓練可能需要較長時間。
+3. 由上至下依序執行所有 Cell。Notebook 會自動解析 repository 根目錄，不需修改本機絕對路徑。模型主要採用 Nested Shuffled K-fold，並以 TimeSeriesCV 作為診斷，再搭配 Bayesian Search；完整訓練可能需要較長時間。
 
 ### 模組化資料流程
 
@@ -158,10 +158,10 @@ python src/model/neural_network.py
 
 ## 未來方向
 
-目前模型已將 `STAGE` 納入特徵，但未來仍可進一步強化製程階段分析。製程階段可依下列方式細分：
+目前模型將 `STAGE` 與各 Chamber 特徵納入模型，時間特徵則以 `pressure_duration` 表示壓力作用時間。若未來需要更細緻地分析製程狀態，可依下列方式建立額外實驗特徵：
 
 - **依既有製程標籤分段**：先將 Stage A 與 Stage B 分開建模，比較各階段的關鍵參數、特徵重要度及預測誤差。
-- **依設備運轉狀態分段**：根據腔體壓力與 Head、Wafer、Stage 的旋轉狀態，將單一階段再分為待機（Idle）、浸潤（Soaking）、研磨（Polishing）及空轉（Spinning）等子階段。
+- **依設備運轉訊號分段**：根據腔體壓力與 Head、Wafer、Stage 的旋轉訊號，辨識壓力作用區段、旋轉區段與訊號轉換區段，作為後續實驗特徵。
 - **依製程時間分段**：將每次製程依時間比例切分為前段、中段與後段，分別計算壓力、轉速、Slurry Flow 的平均值、變異程度、斜率及穩定時間。
 - **依 Chamber 路徑分段**：比較 Ch1–Ch3 與 Ch4–Ch6，或依晶圓實際經過的 Chamber 順序建立製程路徑群組，分析不同設備路徑造成的差異。
 - **依訊號轉折點自動分段**：利用壓力、轉速或流量的明顯變化點進行 change-point detection，從資料中辨識實際製程狀態切換，而不只依賴預先定義的標籤。
@@ -173,11 +173,11 @@ python src/model/neural_network.py
 若要減少人工門檻的依賴，可將每個 `WAFER_ID × STAGE × CHAMBER` 視為一條多變量時間序列，使用下列方法辨識製程子階段：
 
 - **多變量變點偵測（Change-point Detection）**：先標準化壓力、轉速與 Slurry Flow，再使用 PELT、Binary Segmentation 或 Window-based 方法，根據均值、變異數或線性趨勢的改變找出階段邊界。PELT 適合離線處理完整製程資料，並可透過 penalty 控制切出的區段數量。
-- **隱馬可夫模型（HMM）**：將 Idle、Soaking、Polishing、Spinning 視為不可直接觀察的隱藏狀態，以壓力、轉速及流量作為觀測值，學習各狀態的分布與轉移機率。這種方法能避免逐時間點分類造成狀態頻繁跳動。
+- **隱馬可夫模型（HMM）**：將壓力、轉速及流量所代表的操作狀態視為不可直接觀察的隱藏狀態，學習各狀態的分布與轉移機率。這種方法能避免逐時間點分類造成狀態頻繁跳動。
 - **隱半馬可夫模型（HSMM）**：在 HMM 基礎上進一步描述每個狀態的持續時間，較適合具有固定製程順序與合理時間範圍的 CMP 流程，也能排除只維持一、兩個採樣點的非物理狀態。
-- **有限狀態機（Finite-state Machine）**：先以物理規則產生候選狀態，例如壓力大於門檻且 Wafer、Stage 同時旋轉時判定為 Polishing，再加入允許的狀態轉移、最短持續時間與 hysteresis，降低感測器雜訊造成的誤切換。此方法最容易解釋，也適合作為 HMM/HSMM 的初始標籤。
+- **有限狀態機（Finite-state Machine）**：先以壓力與旋轉訊號產生候選操作狀態，再加入允許的狀態轉移、最短持續時間與 hysteresis，降低感測器雜訊造成的誤切換。此方法最容易解釋，也適合作為 HMM/HSMM 的初始標籤。
 - **DTW 與序列分群**：利用 Dynamic Time Warping 對齊長度及速度不同的製程曲線，再以階層式分群或 K-medoids 找出常見製程路徑。可先辨識不同 recipe 或設備運行模式，再於每個群組內進行變點分段。
-- **Matrix Profile／Motif Discovery**：搜尋跨晶圓重複出現的訊號片段與異常片段，可用來辨識典型研磨週期、異常短循環或未被既有 `STAGE` 標籤描述的子製程。
+- **Matrix Profile／Motif Discovery**：搜尋跨晶圓重複出現的訊號片段與異常片段，可用來辨識典型製程週期、異常短循環或未被既有 `STAGE` 標籤描述的子製程。
 
 建議採用「物理規則狀態機 → 多變量 PELT → HSMM 平滑」的混合流程：先用設備知識建立可解釋的初始狀態，再以變點偵測修正邊界，最後利用狀態轉移與持續時間限制消除不合理的短區段。分段門檻、標準化參數與模型皆應只在訓練資料上估計，再套用至 test／validation，避免資料洩漏。
 
@@ -185,5 +185,5 @@ python src/model/neural_network.py
 
 - Notebook 與命令列工具皆使用 repository 內的相對路徑；請維持上述 `data/raw/` 結構。
 - 部分獨立 `.py` 檔案的中文註解可能存在編碼顯示問題；完整且可讀的分析說明以 notebook 為準。
-- 模型驗證採時間順序切分，不應改用隨機切分，以免未來資料洩漏至訓練階段。
+- 模型驗證主要採 Nested Shuffled K-fold，並以 TimeSeriesCV 檢查時間漂移；若未來部署虛擬量測模型，則必須依時間順序切分資料以避免資料洩漏。
 - 若要重現表格中的比較結果，請使用相同資料清理條件、特徵版本與 `random_state=42`。
