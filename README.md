@@ -38,7 +38,7 @@ Notebook 中記錄的 Validation MSE 如下（數值越低越好）：
 
 | 模型 | Validation MSE |
 |---|---:|
-| Optimized XGBoost（特徵篩選後） | **8.80** |
+| Optimized XGBoost（特徵篩選後） | **8.34** |
 | Random Forest（分組） | 10.27 |
 | Decision Tree（分組） | 15.78 |
 | SVR（分組） | 19.65 |
