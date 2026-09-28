@@ -77,6 +77,11 @@ def train_model(
     group_name,
     n_iter=50,
     cv_strategy="competition",
+    outer_splits=5,
+    inner_splits=3,
+    random_state=42,
+    n_jobs=1,
+    return_details=False,
 ):
     """Run nested Bayesian CV with a competition-aligned default.
 
@@ -84,13 +89,15 @@ def train_model(
     spans the same timestamp range as training. ``time`` remains available as
     an expanding-window diagnostic for temporal drift.
     """
+    if outer_splits < 2 or inner_splits < 2:
+        raise ValueError("outer_splits 與 inner_splits 必須至少為 2")
     if cv_strategy == "competition":
-        outer_cv = KFold(n_splits=5, shuffle=True, random_state=42)
-        inner_cv = KFold(n_splits=3, shuffle=True, random_state=43)
+        outer_cv = KFold(n_splits=outer_splits, shuffle=True, random_state=random_state)
+        inner_cv = KFold(n_splits=inner_splits, shuffle=True, random_state=random_state + 1)
         cv_description = "nested shuffled K-fold"
     elif cv_strategy == "time":
-        outer_cv = TimeSeriesSplit(n_splits=5)
-        inner_cv = TimeSeriesSplit(n_splits=3)
+        outer_cv = TimeSeriesSplit(n_splits=outer_splits)
+        inner_cv = TimeSeriesSplit(n_splits=inner_splits)
         cv_description = "nested expanding time-series"
     else:
         raise ValueError("cv_strategy 必須是 'competition' 或 'time'")
@@ -102,9 +109,9 @@ def train_model(
         n_iter=n_iter,
         cv=inner_cv,
         scoring="neg_mean_squared_error",
-        n_jobs=1,
+        n_jobs=n_jobs,
         verbose=0,
-        random_state=42,
+        random_state=random_state,
     )
     score_kwargs = {
         "estimator": search,
@@ -112,7 +119,7 @@ def train_model(
         "y": y_data,
         "cv": outer_cv,
         "scoring": "neg_mean_squared_error",
-        "n_jobs": 1,
+        "n_jobs": n_jobs,
     }
     nested_scores = cross_val_score(**score_kwargs)
     print(f"[完成] [{group_name}] 各折 MSE 結果:")
@@ -123,6 +130,14 @@ def train_model(
     # state across outer folds can make fold scores depend on fold order.
     search.fit(X_data, y_data, callback=DeltaYStopper(delta=0.01, n_best=15))
     print(f"   最佳參數: {search.best_params_}")
+    if return_details:
+        return {
+            "estimator": search.best_estimator_,
+            "cv_mse": [-float(score) for score in nested_scores],
+            "cv_mean_mse": -float(np.mean(nested_scores)),
+            "cv_std_mse": float(np.std(nested_scores)),
+            "best_params": search.best_params_,
+        }
     return search.best_estimator_
 
 
@@ -188,6 +203,49 @@ def evaluate_model(
         plt.legend()
         plt.show()
     return predictions
+
+
+def _aligned_test_matrix(test_df: pd.DataFrame, prepared: PreparedData):
+    """Align test features to the training schema and identify the group."""
+    frame = test_df.copy()
+    if "WAFER_ID" in frame.columns:
+        frame = frame.set_index("WAFER_ID")
+    X_test = frame.drop(columns=["AVG_REMOVAL_RATE", "START_TIMESTAMP"], errors="ignore")
+    if "STAGE" in X_test.columns:
+        X_test["STAGE"] = X_test["STAGE"].map({"A": 0, "B": 1}).fillna(-1)
+    for column in set(prepared.X.columns) - set(X_test.columns):
+        X_test[column] = 0
+    X_test = X_test[prepared.X.columns]
+    is_high = X_test[prepared.high_group_cols].notna().any(axis=1).to_numpy()
+    return X_test, is_high
+
+
+def predict_grouped(
+    model_high,
+    model_low,
+    test_df: pd.DataFrame,
+    prepared: PreparedData,
+    refined_high_cols=None,
+    refined_low_cols=None,
+    imputer_high=None,
+    imputer_low=None,
+):
+    """Return grouped predictions and group labels in test row order."""
+    X_test, is_high = _aligned_test_matrix(test_df, prepared)
+    predictions = np.full(len(X_test), np.nan, dtype=float)
+    high_imputer = imputer_high if imputer_high is not None else prepared.imputer_high
+    low_imputer = imputer_low if imputer_low is not None else prepared.imputer_low
+    if is_high.any():
+        values = X_test.loc[is_high].drop(columns=X_test.columns.intersection(prepared.drop_from_high_cols))
+        if refined_high_cols is not None:
+            values = values[refined_high_cols]
+        predictions[is_high] = model_high.predict(high_imputer.transform(values))
+    if (~is_high).any():
+        values = X_test.loc[~is_high].drop(columns=X_test.columns.intersection(prepared.drop_from_low_cols))
+        if refined_low_cols is not None:
+            values = values[refined_low_cols]
+        predictions[~is_high] = model_low.predict(low_imputer.transform(values))
+    return predictions, np.where(is_high, "high", "low")
 
 
 def load_validation(path: str = "data/processed/cmp_final_test_dataset.csv"):

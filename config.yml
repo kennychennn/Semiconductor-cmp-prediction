@@ -30,3 +30,20 @@ training:
   inner_splits: 3
   bayes_search_iterations: 50
   feature_importance_threshold: 0.80
+  cv_strategy: competition
+  n_jobs: 1
+  time_series_diagnostic: true
+  time_series_splits: 5
+
+experiment:
+  # 可改成只跑單一模型，例如 [xgboost_refined]。
+  models:
+    - decision_tree
+    - random_forest
+    - xgboost_refined
+    - svr
+    - neural_network_all
+  include_timing_features: false
+  save_processed_features: true
+  run_root: results/runs
+  model_root: models/runs

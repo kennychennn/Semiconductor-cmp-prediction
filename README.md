@@ -79,6 +79,23 @@ pip install jupyter pandas numpy matplotlib seaborn scikit-learn scikit-optimize
 2. 開啟 [`notebooks/CMP.ipynb`](notebooks/CMP.ipynb)。
 3. 由上至下依序執行所有 Cell。Notebook 會自動解析 repository 根目錄，不需修改本機絕對路徑。模型主要採用 Nested Shuffled K-fold，並以 TimeSeriesCV 作為診斷，再搭配 Bayesian Search；完整訓練可能需要較長時間。
 
+### 一鍵實驗流程
+
+Notebook 之外，現在可以由 `config.yml` 驅動完整實驗。它會依序檢查原始資料、建立 pressure-duration 特徵、保存 processed/interim 資料、執行設定的模型、保存 Nested CV 與 test 指標、以 expanding TimeSeriesCV 計算時間漂移診斷、輸出預測及模型檔案，最後產生 run manifest。
+
+```bash
+# 執行 config.yml 中列出的全部模型
+make experiment
+
+# 只跑一個模型，適合快速重跑或除錯
+python -m src.experiment.run --models xgboost_refined --n-iter 5
+
+# 檢查原始資料、processed 特徵與最近一次結果
+make check
+```
+
+每次執行會建立 `results/runs/<run_id>/` 與 `models/runs/<run_id>/`。結果目錄包含 `metrics.csv`、各模型預測、特徵快照、`config_snapshot.yml` 與 `manifest.json`；模型目錄保存可載入的 `.joblib` 及其特徵欄位／補值器。`results/runs/latest_run.json` 指向最近一次執行。模型與結果屬於可重建產物，已由 `.gitignore` 排除。
+
 ### 模組化資料流程
 
 Notebook 中的資料流程亦已拆分為可獨立執行與引用的 Python 模組。所有路徑皆由命令列傳入：
@@ -132,6 +149,8 @@ python src/model/neural_network.py
 │   ├── interim/           # 中間轉換資料
 │   └── processed/         # 模型使用的最終資料
 ├── docs/                  # 資料與模型文件
+│   ├── competition/       # 官方競賽說明
+│   └── data_dictionary.md  # 原始欄位與衍生特徵定義
 ├── models/                # 訓練完成的模型
 ├── notebooks/             # Jupyter 分析與實驗
 ├── reports/figures/       # 報告與 EDA 圖表
@@ -153,6 +172,9 @@ python src/model/neural_network.py
 | `src/preprocess/build_features.py` | 物理特徵萃取、Chamber 聚合與資料集輸出 |
 | `src/visualization/visualize.py` | 時間趨勢、共線性與目標相關性分析 |
 | `src/model/` | 決策樹、隨機森林、XGBoost、SVR 與 MLP 模型 |
+| `src/experiment/` | 一鍵實驗執行、結果保存與自動檢查 |
+| `docs/data_dictionary.md` | 原始 25 欄位與 162 個 Chamber 特徵欄位的定義 |
+| `docs/competition/2016_phm_data_challenge.pdf` | PHM 2016 官方競賽說明 |
 | `data/interim/` | 中間特徵資料 |
 | `data/processed/` | 可供模型使用的最終資料集 |
 
