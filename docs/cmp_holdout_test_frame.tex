@@ -1,0 +1,85 @@
+% Frame snippet for a Beamer presentation.
+% The parent deck should load a CJK-capable font package when Chinese text is used.
+
+\begin{frame}{CMP 競賽 Hold-out Test 實驗設計}
+\footnotesize
+
+\begin{columns}[T,totalwidth=\textwidth]
+
+\begin{column}{0.235\textwidth}
+  \begin{block}{1. 資料角色}
+    \begin{itemize}\setlength{\itemsep}{2pt}
+      \item Training：建立特徵、選擇模型與調整超參數
+      \item Competition test：完全保留至最後，只做一次最終評估
+      \item 單位：\texttt{WAFER\_ID $\times$ STAGE}
+      \item 目前樣本：Training 1,977；test 424
+    \end{itemize}
+  \end{block}
+
+  \begin{alertblock}{評估定義}
+    競賽 test 是同一競賽分布的 hold-out benchmark，\textbf{不宣稱是未來樣本}，也不代表線上部署時可忽略時間洩漏。
+  \end{alertblock}
+\end{column}
+
+\begin{column}{0.245\textwidth}
+  \begin{block}{2. 時序資料轉特徵}
+    原始多變量時間序列
+    \[
+      (\texttt{WAFER\_ID},\texttt{STAGE},\texttt{CHAMBER},t)
+    \]
+    \vspace{-4pt}
+    \begin{itemize}\setlength{\itemsep}{2pt}
+      \item 依 Chamber 聚合並展開 \texttt{Ch1--Ch6}
+      \item \texttt{pressure\_duration}：\(\sum\Delta t\)，其中 chamber pressure $>0$
+      \item 耗材：Min--Max 後取 max；保留 membrane
+      \item 壓力、轉速、slurry、注水：依訊號特性取 mean/std/median/sum
+      \item 排除共線欄位：\texttt{MACHINE\_DATA}；backing film 與 pressurized sheet
+    \end{itemize}
+  \end{block}
+\end{column}
+
+\begin{column}{0.245\textwidth}
+  \begin{block}{3. Training 內部驗證}
+    \begin{enumerate}\setlength{\itemsep}{2pt}
+      \item 依 Chamber 路徑分成 high（Ch1--3）與 low（Ch4--6）
+      \item 主要驗證：Nested Shuffled K-fold
+      \item 內層 Bayesian Search 選超參數
+      \item 外層 MSE 估計模型穩定性
+      \item expanding TimeSeriesCV：補充時間漂移診斷
+    \end{enumerate}
+  \end{block}
+
+  \begin{block}{4. 模型}
+    Decision Tree、Random Forest、XGBoost refined、SVR、MLP
+  \end{block}
+\end{column}
+
+\begin{column}{0.235\textwidth}
+  \begin{block}{5. Final fit \& test}
+    \begin{enumerate}\setlength{\itemsep}{2pt}
+      \item 以全部 Training data 重新擬合最佳設定
+      \item 使用 training scaler、imputer 與欄位 schema 對齊 test
+      \item 產生 test 預測 \(\hat y\)
+      \item 計算 MSE、MAPE、\(R^2\)
+      \item 保存 predictions、metrics、model 與 run manifest
+    \end{enumerate}
+  \end{block}
+
+  \begin{block}{MRR 代理關係}
+    \[
+      \mathrm{MRR}\approx
+      \frac{\text{polished thickness}}
+      {\text{total pressure-active time}}
+    \]
+    因此以 \texttt{pressure\_duration} 表示壓力作用時間，而非宣稱所有壓力時間都等同於有效研磨時間。
+  \end{block}
+\end{column}
+
+\end{columns}
+
+\vspace{2pt}
+\centering
+\scriptsize
+\textbf{線上部署備註：}若模型用於未來虛擬量測，應改用依時間順序切分的訓練／驗證設計，避免以未來狀態驗證過去樣本。
+
+\end{frame}
